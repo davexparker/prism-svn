@@ -33,16 +33,18 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import common.IterableStateSet;
-
 import prism.PrismException;
 import prism.PrismUtils;
+
+import common.IterableStateSet;
+
 import explicit.rewards.MCRewards;
 import explicit.rewards.MDPRewards;
 
@@ -56,7 +58,7 @@ public class MDPSimple extends MDPExplicit implements NondetModelSimple
 {
 	// Transition function (Steps)
 	protected List<List<Distribution>> trans;
-
+	
 	// Action labels
 	// (null list means no actions; null in element s means no actions for state s)
 	protected List<List<Object>> actions;
@@ -229,6 +231,7 @@ public class MDPSimple extends MDPExplicit implements NondetModelSimple
 		numDistrs = numTransitions = maxNumDistrs = 0;
 		maxNumDistrsOk = true;
 		trans = new ArrayList<List<Distribution>>(numStates);
+		
 		for (int i = 0; i < numStates; i++) {
 			trans.add(new ArrayList<Distribution>());
 		}
@@ -679,6 +682,9 @@ public class MDPSimple extends MDPExplicit implements NondetModelSimple
 	}
 
 	@Override
+	/**
+	 * ignore this, not referenced
+	 */
 	public void prob1step(BitSet subset, BitSet u, BitSet v, boolean forall, BitSet result)
 	{
 		boolean b1, b2;
@@ -926,6 +932,58 @@ public class MDPSimple extends MDPExplicit implements NondetModelSimple
 	}
 
 	@Override
+	public double mvMultRewMinMaxSingle(int s, double[] vect, HashMap<Integer, Double> vhash, MDPRewards mdpRewards, boolean min, int[] strat)
+	{
+		int j, k, stratCh = -1;
+		double d, prob, minmax;
+		boolean first;
+		List<Distribution> step;
+
+		minmax = 0;
+		first = true;
+		j = -1;
+		step = trans.get(s);
+		for (Distribution distr : step) {
+			j++;
+			// Compute sum for this distribution
+			d = mdpRewards.getTransitionReward(s, j);
+			for (Map.Entry<Integer, Double> e : distr) {
+				k = (Integer) e.getKey();
+				prob = (Double) e.getValue();
+				double valueK;
+				if(vhash.get(k)!=null){
+					valueK=vhash.get(k);
+				}else{
+					valueK=vect[k];
+					vhash.put(k, valueK);
+				}
+				d += prob * valueK;
+			}
+			// Check whether we have exceeded min/max so far
+			if (first || (min && d < minmax) || (!min && d > minmax)) {
+				minmax = d;
+				// If strategy generation is enabled, remember optimal choice
+				if (strat != null)
+					stratCh = j;
+			}
+			first = false;
+		}
+		// Add state reward (doesn't affect min/max)
+		minmax += mdpRewards.getStateReward(s);
+		// If strategy generation is enabled, store optimal choice
+		if (strat != null & !first) {
+			// For max, only remember strictly better choices
+			if (min) {
+				strat[s] = stratCh;
+			} else if (strat[s] == -1 || minmax > vhash.get(s)) {
+				strat[s] = stratCh;
+			}
+		}
+
+		return minmax;
+	}
+
+	@Override
 	public double mvMultRewSingle(int s, int i, double[] vect, MCRewards mcRewards)
 	{
 		double d, prob;
@@ -1065,7 +1123,7 @@ public class MDPSimple extends MDPExplicit implements NondetModelSimple
 	 * Get the ith choice (distribution) for state s.
 	 */
 	public Distribution getChoice(int s, int i)
-	{
+	{		
 		return trans.get(s).get(i);
 	}
 
@@ -1159,5 +1217,7 @@ public class MDPSimple extends MDPExplicit implements NondetModelSimple
 			return false;
 		// TODO: compare actions (complicated: null = null,null,null,...)
 		return true;
-	}
+	}	
+	
+
 }

@@ -85,10 +85,12 @@ public class PrismSettings implements Observer
 	public static final	String PRISM_LIN_EQ_METHOD					= "prism.linEqMethod";//"prism.iterativeMethod";
 	public static final	String PRISM_LIN_EQ_METHOD_PARAM			= "prism.linEqMethodParam";//"prism.overRelaxation";
 	public static final	String PRISM_MDP_SOLN_METHOD				= "prism.mdpSolnMethod";
+	public static final	String PRISM_POMDP_SOLN_METHOD				= "prism.pomdpSolnMethod";
 	public static final	String PRISM_MDP_MULTI_SOLN_METHOD			= "prism.mdpMultiSolnMethod";
 	public static final	String PRISM_TERM_CRIT						= "prism.termCrit";//"prism.termination";
 	public static final	String PRISM_TERM_CRIT_PARAM				= "prism.termCritParam";//"prism.terminationEpsilon";
 	public static final	String PRISM_MAX_ITERS						= "prism.maxIters";//"prism.maxIterations";
+	public static final	String PRISM_GRID_RESOLUTION				= "prism.gridResolution";
 	
 	public static final	String PRISM_CUDD_MAX_MEM					= "prism.cuddMaxMem";
 	public static final	String PRISM_CUDD_EPSILON					= "prism.cuddEpsilon";
@@ -240,8 +242,10 @@ public class PrismSettings implements Observer
 																			"Which iterative method to use when solving linear equation systems." },
 			{ DOUBLE_TYPE,		PRISM_LIN_EQ_METHOD_PARAM,				"Over-relaxation parameter",			"2.1",			new Double(0.9),															"",																							
 																			"Over-relaxation parameter for iterative numerical methods such as JOR/SOR." },
-			{ CHOICE_TYPE,		PRISM_MDP_SOLN_METHOD,					"MDP solution method",				"4.0",			"Value iteration",																"Value iteration,Gauss-Seidel,Policy iteration,Modified policy iteration,Linear programming",
+			{ CHOICE_TYPE,		PRISM_MDP_SOLN_METHOD,					"MDP solution method",				    "4.0",			"Value iteration",															"Value iteration,Gauss-Seidel,Policy iteration,Modified policy iteration,Linear programming,Real time dynamic programming",
 																			"Which method to use when solving Markov decision processes." },
+			{ CHOICE_TYPE,		PRISM_POMDP_SOLN_METHOD,				"POMDP solution method",				"4.1",			"Fixed-resolution Grid Approximation",										"Real time dynamic programming (Belief),Fixed-resolution Grid Approximation",
+																			"Which method to use when solving Partially Observable Markov decision processes." },
 			{ CHOICE_TYPE,		PRISM_MDP_MULTI_SOLN_METHOD,			"MDP multi-objective solution method",				"4.0.3",			"Value iteration",											"Value iteration,Gauss-Seidel,Linear programming",
 																			"Which method to use when solving multi-objective queries on Markov decision processes." },
 			{ CHOICE_TYPE,		PRISM_TERM_CRIT,						"Termination criteria",					"2.1",			"Relative",																	"Absolute,Relative",																		
@@ -250,6 +254,8 @@ public class PrismSettings implements Observer
 																			"Epsilon value to use for checking termination of iterative numerical methods." },
 			{ INTEGER_TYPE,		PRISM_MAX_ITERS,						"Termination max. iterations",			"2.1",			new Integer(10000),															"0,",																						
 																			"Maximum number of iterations to perform if iterative methods do not converge." },
+			{ INTEGER_TYPE,		PRISM_GRID_RESOLUTION,					"Fixed grid resolution",			    "4.1",			new Integer(10),															"1,",																						
+																			"The resolution for the fixed grid approximation algorithm for POMDPs." },
 			// MODEL CHECKING OPTIONS:
 			{ BOOLEAN_TYPE,		PRISM_PRECOMPUTATION,					"Use precomputation",					"2.1",			new Boolean(true),															"",																							
 																			"Whether to use model checking precomputation algorithms (Prob0, Prob1, etc.), where optional." },
@@ -982,7 +988,14 @@ public class PrismSettings implements Observer
 		} else if (sw.equals("linprog") || sw.equals("lp")) {
 			set(PRISM_MDP_SOLN_METHOD, "Linear programming");
 			set(PRISM_MDP_MULTI_SOLN_METHOD, "Linear programming");
+		}else if (sw.equals("rtdp")) {
+			set(PRISM_MDP_SOLN_METHOD, "Real time dynamic programming");			
+		}else if (sw.equals("rtdp_bel")) {
+			set(PRISM_POMDP_SOLN_METHOD, "Real time dynamic programming (Belief)");
+		}else if (sw.equals("fixed_grid")) {			
+			set(PRISM_POMDP_SOLN_METHOD, "Fixed-resolution Grid Approximation");
 		}
+			
 		// Linear equation solver over-relaxation parameter
 		else if (sw.equals("omega")) {
 			if (i < args.length - 1) {
@@ -1026,6 +1039,21 @@ public class PrismSettings implements Observer
 					if (j < 0)
 						throw new NumberFormatException("");
 					set(PRISM_MAX_ITERS, j);
+				} catch (NumberFormatException e) {
+					throw new PrismException("Invalid value for -" + sw + " switch");
+				}
+			} else {
+				throw new PrismException("No value specified for -" + sw + " switch");
+			}
+		}
+		// fixed grid resolution
+		else if (sw.equals("gridresolution")) {
+			if (i < args.length - 1) {
+				try {
+					j = Integer.parseInt(args[++i]);
+					if (j < 0)
+						throw new NumberFormatException("");
+					set(PRISM_GRID_RESOLUTION, j);
 				} catch (NumberFormatException e) {
 					throw new PrismException("Invalid value for -" + sw + " switch");
 				}
@@ -1647,6 +1675,7 @@ public class PrismSettings implements Observer
 		mainLog.println("-absolute (or -abs) ............ Use absolute error for detecting convergence");
 		mainLog.println("-epsilon <x> (or -e <x>) ....... Set value of epsilon (for convergence check) [default: 1e-6]");
 		mainLog.println("-maxiters <n> .................. Set max number of iterations [default: 10000]");
+		mainLog.println("-gridresolution <n> .............Set resolution for fixed grid approximation (POMDP) [default: 10]");
 		mainLog.println();
 		mainLog.println("MODEL CHECKING OPTIONS:");
 		mainLog.println("-nopre ......................... Skip precomputation algorithms (where optional)");

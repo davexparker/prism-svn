@@ -277,6 +277,10 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 	// Has the CUDD library been initialised yet?
 	private boolean cuddStarted = false;
 
+	// Info about automatic engine switching
+	private int engineOld = -1;
+	private boolean engineSwitched = false;
+
 	//------------------------------------------------------------------------------
 	// Constructors + options methods
 	//------------------------------------------------------------------------------
@@ -443,6 +447,11 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 	public void setMaxIters(int i) throws PrismException
 	{
 		settings.set(PrismSettings.PRISM_MAX_ITERS, i);
+	}
+	
+	public void setGridResolution(int i) throws PrismException
+	{
+		settings.set(PrismSettings.PRISM_GRID_RESOLUTION, i);
 	}
 
 	public void setCUDDMaxMem(String s) throws PrismException
@@ -771,6 +780,11 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 		return settings.getInteger(PrismSettings.PRISM_MAX_ITERS);
 	}
 
+	public int getGridResolution()
+	{
+		return settings.getInteger(PrismSettings.PRISM_GRID_RESOLUTION);
+	}
+	
 	public boolean getVerbose()
 	{
 		return settings.getBoolean(PrismSettings.PRISM_VERBOSE);
@@ -1699,9 +1713,35 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 		mainLog.println();
 		mainLog.print("Variables:   ");
 		for (int i = 0; i < currentModulesFile.getNumVars(); i++) {
-			mainLog.print(currentModulesFile.getVarName(i) + " ");
+			if (currentModulesFile.isVarObservable(i))
+				mainLog.print(currentModulesFile.getVarName(i) + " ");
+			else
+				mainLog.print("(" + currentModulesFile.getVarName(i) + ") ");
 		}
 		mainLog.println();
+
+		// For some models, automatically switch engine
+		if (currentModelType == ModelType.POMDP || currentModelType == ModelType.POPTA) {
+			mainLog.println("\nSwitching to explicit engine");
+			engineOld = getEngine();
+			engineSwitched = true;
+			try {
+				setEngine(Prism.EXPLICIT);
+			} catch (PrismException e) {
+				// Won't happen
+			}
+		}
+		// For other models, switch engine back if changed earlier
+		else {
+			if (engineSwitched) {
+				try {
+					setEngine(engineOld);
+				} catch (PrismException e) {
+					// Won't happen
+				}
+				engineSwitched = false;
+			}
+		}
 
 		// If required, export parsed PRISM model
 		if (exportPrism) {
@@ -1890,7 +1930,7 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 	 */
 	public boolean modelCanBeBuilt()
 	{
-		if (currentModelType == ModelType.PTA)
+		if (currentModelType == ModelType.PTA || currentModelType == ModelType.POPTA)
 			return false;
 		return true;
 	}
@@ -1940,8 +1980,8 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 		clearBuiltModel();
 
 		try {
-			if (currentModelType == ModelType.PTA) {
-				throw new PrismException("You cannot build a PTA model explicitly, only perform model checking");
+			if (currentModelType == ModelType.PTA || currentModelType == ModelType.POPTA) {
+				throw new PrismException("You cannot build a " + currentModelType + " model explicitly, only perform model checking");
 			}
 
 			mainLog.print("\nBuilding model...\n");
@@ -1964,6 +2004,7 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 					}
 					ConstructModel constructModel = new ConstructModel(this);
 					constructModel.setFixDeadlocks(getFixDeadlocks());
+					constructModel.setBuildSparse(false);
 					currentModelExpl = constructModel.constructModel(currentModelGenerator);
 					currentModel = null;
 				}
@@ -2121,7 +2162,7 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 		Model model;
 		List<State> statesList;
 
-		if (modulesFile.getModelType() == ModelType.PTA) {
+		if (modulesFile.getModelType() == ModelType.PTA || modulesFile.getModelType() == ModelType.POPTA) {
 			throw new PrismException("You cannot build a PTA model explicitly, only perform model checking");
 		}
 
@@ -2131,7 +2172,7 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 
 		constructModel = new ConstructModel(this);
 		modelExpl = constructModel.constructModel(new ModulesFileModelGenerator(modulesFile, this));
-		statesList = constructModel.getStatesList();
+		statesList = constructModel.getStatesList();		
 
 		// create Explicit2MTBDD object
 		expm2mtbdd = new ExplicitModel2MTBDD(this);
@@ -2820,7 +2861,7 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 		prop.getExpression().checkValid(currentModelType);
 
 		// For PTAs...
-		if (currentModelType == ModelType.PTA) {
+		if (currentModelType == ModelType.PTA || currentModelType == ModelType.POPTA) {
 			return modelCheckPTA(propertiesFile, prop.getExpression(), definedPFConstants);
 		}
 
@@ -2882,12 +2923,24 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 	 */
 	public Result modelCheckPTA(PropertiesFile propertiesFile, Expression expr, Values definedPFConstants) throws PrismException, PrismLangException
 	{
+		ModelType oldModelType = currentModelType;
+		
 		// Check that property is valid for this model type
 		// and create new model checker object
 		expr.checkValid(currentModelType);
 
+		// Check engine compatibility
+		/*if (currentModelType == ModelType.POPTA) {
+			if (!(settings.getString(PrismSettings.PRISM_PTA_METHOD).equals("Digital clocks"))) {
+				throw new PrismException("Need to use digital clocks engine for POPTAs");
+			}
+		}*/
+		
+		if (settings.getString(PrismSettings.PRISM_PTA_METHOD).equals("Digital clocks") || currentModelType == ModelType.POPTA)
+			digital = true;
+		
 		// Digital clocks translation
-		if (settings.getString(PrismSettings.PRISM_PTA_METHOD).equals("Digital clocks")) {
+		if (digital) {
 			digital = true;
 			ModulesFile oldModulesFile = currentModulesFile;
 			try {
@@ -2895,7 +2948,12 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 				dc.translate(oldModulesFile, propertiesFile, expr);
 				currentModulesFile = dc.getNewModulesFile();
 				currentModulesFile.setUndefinedConstants(oldModulesFile.getConstantValues());
-				currentModelType = ModelType.MDP;
+				if (currentModelType == ModelType.PTA) {
+					currentModelType = ModelType.MDP;
+				} else {
+					currentModelType = ModelType.POMDP;
+				}
+				currentModelGenerator = new ModulesFileModelGenerator(currentModulesFile, this);
 				currentModelGenerator = new ModulesFileModelGenerator(currentModulesFile, this);
 				clearBuiltModel();
 				// If required, export generated PRISM model
@@ -2914,7 +2972,7 @@ public class Prism extends PrismComponent implements PrismSettingsListener
 			} finally {
 				digital = false;
 				currentModulesFile = oldModulesFile;
-				currentModelType = ModelType.PTA;
+				currentModelType = oldModelType;
 				clearBuiltModel();
 				currentModel = null;
 				currentModelExpl = null;

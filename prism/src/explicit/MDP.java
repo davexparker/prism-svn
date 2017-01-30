@@ -27,6 +27,8 @@
 package explicit;
 
 import java.util.BitSet;
+import java.util.HashMap;
+import java.util.Hashtable;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
@@ -206,6 +208,19 @@ public interface MDP extends NondetModel
 	 * @param strat Storage for (memoryless) strategy choice indices (ignored if null)
 	 */
 	public double mvMultRewMinMaxSingle(int s, double vect[], MDPRewards mdpRewards, boolean min, int strat[]);
+	
+	/**
+	 * Do a single row of matrix-vector multiplication and sum of rewards followed by min/max.
+	 * i.e. return min/max_k { rew(s) + rew_k(s) + sum_j P_k(s,j)*vect[j] }
+	 * Optionally, store optimal (memoryless) strategy info. 
+	 * @param s Row index
+	 * @param vect Vector to multiply by
+	 * @param vhash 
+	 * @param mdpRewards The rewards
+	 * @param min Min or max for (true=min, false=max)
+	 * @param strat Storage for (memoryless) strategy choice indices (ignored if null)
+	 */
+	public double mvMultRewMinMaxSingle(int s, double vect[], HashMap<Integer, Double> vhash, MDPRewards mdpRewards, boolean min, int strat[]);
 
 	/**
 	 * Do a single row of matrix-vector multiplication and sum of rewards for a specific choice.
